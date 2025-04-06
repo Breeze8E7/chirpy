@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync/atomic"
 )
 
@@ -80,7 +81,8 @@ func decodeChirpHandler(w http.ResponseWriter, r *http.Request) {
 		w.Write(jsonResponse)
 		return
 	}
-	response := map[string]bool{"valid": true}
+	params.Body = cleanChirp(params.Body)
+	response := map[string]string{"cleaned_body": params.Body}
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
@@ -89,4 +91,19 @@ func decodeChirpHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonResponse)
+}
+
+func cleanChirp(body string) string {
+	profanity := []string{"kerfuffle", "sharbert", "fornax"}
+	words := strings.Split(body, " ")
+	for i, word := range words {
+		lowercaseWord := strings.ToLower(word)
+		for _, p := range profanity {
+			if lowercaseWord == p {
+				words[i] = "****"
+				break
+			}
+		}
+	}
+	return strings.Join(words, " ")
 }
