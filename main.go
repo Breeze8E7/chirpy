@@ -1,15 +1,34 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/breeze/chirpy/internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 func main() {
-	apiCfg := &apiConfig{}
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatalf("Error loading .env file")
+	}
+	dbURL := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatalf("Error opening database connection: %v", err)
+	}
+	dbQueries := database.New(db)
+	apiCfg := &apiConfig{
+		DB: dbQueries,
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", healthHandler)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metricsHandler)
@@ -33,6 +52,7 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 type apiConfig struct {
+	DB             *database.Queries
 	fileserverHits atomic.Int32
 }
 
