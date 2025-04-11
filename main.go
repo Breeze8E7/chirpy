@@ -50,6 +50,7 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshHandler)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeHandler)
 	mux.HandleFunc("PUT /api/users", apiCfg.updateUser)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerChirpsDelete)
 	fileServer := http.FileServer(http.Dir("."))
 	handler := http.StripPrefix("/app", fileServer)
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
@@ -324,6 +325,40 @@ func (cfg *apiConfig) getOneChirp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	w.Write(jsonResponse)
+}
+
+func (cfg *apiConfig) handlerChirpsDelete(w http.ResponseWriter, r *http.Request) {
+	chirpIDString := r.PathValue("chirpID")
+	chirpID, err := uuid.Parse(chirpIDString)
+	if err != nil {
+		http.Error(w, "Invalid chirp ID format", http.StatusBadRequest)
+		return
+	}
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		http.Error(w, "Couldn't find JWT", http.StatusUnauthorized)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		http.Error(w, "Couldn't find JWT", http.StatusUnauthorized)
+		return
+	}
+	dbChirp, err := cfg.DB.GetChirp(r.Context(), chirpID)
+	if err != nil {
+		http.Error(w, "Couldn't get chirp", http.StatusNotFound)
+		return
+	}
+	if dbChirp.UserID != userID {
+		http.Error(w, "You can't delete this chirp", http.StatusForbidden)
+		return
+	}
+	err = cfg.DB.DeleteChirp(r.Context(), chirpID)
+	if err != nil {
+		http.Error(w, "Couldn't delete chirp", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (cfg *apiConfig) checkPassword(w http.ResponseWriter, r *http.Request) {
