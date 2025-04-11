@@ -9,10 +9,23 @@ VALUES (
 )
 RETURNING *;
 
+-- name: GetUserByID :one
+SELECT id, email, hashed_password, created_at, updated_at
+FROM users
+WHERE id = $1;
+
 -- name: GetUserByEmail :one
 SELECT id, email, hashed_password, created_at, updated_at
 FROM users
 WHERE email = $1;
+
+-- name: UpdateUserByID :exec
+UPDATE users
+SET 
+    email = COALESCE($1, email),
+    hashed_password = COALESCE($2, hashed_password),
+    updated_at = NOW()
+WHERE id = $3;
 
 -- name: DeleteAllUsers :exec
 DELETE FROM users;

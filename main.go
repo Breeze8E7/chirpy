@@ -49,6 +49,7 @@ func main() {
 	mux.HandleFunc("POST /api/login", apiCfg.checkPassword)
 	mux.HandleFunc("POST /api/refresh", apiCfg.refreshHandler)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeHandler)
+	mux.HandleFunc("PUT /api/users", apiCfg.updateUser)
 	fileServer := http.FileServer(http.Dir("."))
 	handler := http.StripPrefix("/app", fileServer)
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(handler))
@@ -485,4 +486,75 @@ func (cfg *apiConfig) revokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (cfg *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
+	type parameters struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		http.Error(w, "Couldn't find JWT: "+err.Error(), http.StatusUnauthorized)
+		return
+	}
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		http.Error(w, "Couldn't validate JWT "+err.Error(), http.StatusUnauthorized)
+		return
+	}
+	decoder := json.NewDecoder(r.Body)
+	defer r.Body.Close()
+	params := parameters{}
+	err = decoder.Decode(&params)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	var hashedPassword string
+	if params.Password != "" {
+		hash, err := auth.HashPassword(params.Password)
+		if err != nil {
+			http.Error(w, "Failed to hash password: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		hashedPassword = hash
+	}
+	if params.Email == "" {
+		http.Error(w, "Email cannot be empty", http.StatusBadRequest)
+		return
+	}
+	params2 := database.UpdateUserByIDParams{
+		Email:          params.Email,
+		HashedPassword: hashedPassword,
+		ID:             userID,
+	}
+	err = cfg.DB.UpdateUserByID(r.Context(), params2)
+	if err != nil {
+		http.Error(w, "Failed to update user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	updatedUser, err := cfg.DB.GetUserByID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, "Failed to retrieve updated user: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	type userResponse struct {
+		ID        string    `json:"id"`
+		Email     string    `json:"email"`
+		CreatedAt time.Time `json:"created_at"`
+		UpdatedAt time.Time `json:"updated_at"`
+	}
+	response := userResponse{
+		ID:        updatedUser.ID.String(),
+		Email:     updatedUser.Email,
+		CreatedAt: updatedUser.CreatedAt,
+		UpdatedAt: updatedUser.UpdatedAt,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Failed to encode response: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
