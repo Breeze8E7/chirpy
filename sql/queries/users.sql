@@ -10,12 +10,12 @@ VALUES (
 RETURNING *;
 
 -- name: GetUserByID :one
-SELECT id, email, hashed_password, created_at, updated_at
+SELECT id, email, hashed_password, created_at, updated_at, is_chirpy_red
 FROM users
 WHERE id = $1;
 
 -- name: GetUserByEmail :one
-SELECT id, email, hashed_password, created_at, updated_at
+SELECT id, email, hashed_password, created_at, updated_at, is_chirpy_red
 FROM users
 WHERE email = $1;
 
@@ -44,3 +44,9 @@ LIMIT 1;
 UPDATE refresh_tokens 
 SET revoked_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE token = $1;
+
+-- name: UpgradeToRed :one
+UPDATE users
+SET is_chirpy_red = true
+WHERE id = $1
+RETURNING *;
