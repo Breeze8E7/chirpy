@@ -33,11 +33,16 @@ func main() {
 	if jwtSecret == "" {
 		log.Fatal("JWT_SECRET environment variable is not set")
 	}
+	polkaKey := os.Getenv("POLKA_KEY")
+	if polkaKey == "" {
+		log.Fatal("POLKA_KEY environment variable is not set")
+	}
 	dbQueries := database.New(db)
 	apiCfg := &apiConfig{
 		DB:        dbQueries,
 		Platform:  os.Getenv("PLATFORM"),
 		jwtSecret: jwtSecret,
+		polkaKey:  polkaKey,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/healthz", healthHandler)
@@ -75,6 +80,7 @@ type apiConfig struct {
 	Platform       string
 	fileserverHits atomic.Int32
 	jwtSecret      string
+	polkaKey       string
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -623,6 +629,19 @@ func (cfg *apiConfig) upgradeUserToRed(w http.ResponseWriter, r *http.Request) {
 	userID, err := uuid.Parse(payload.Data.UserID)
 	if err != nil {
 		http.Error(w, "Invalid user ID format: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	redKey, err := auth.GetAPIKey(r.Header)
+	if err != nil {
+		if errors.Is(err, auth.ErrNoAuthHeaderIncluded) {
+			http.Error(w, "Missing Authorization header", http.StatusUnauthorized)
+			return
+		}
+		http.Error(w, "Failed to get API key: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if redKey != cfg.polkaKey {
+		http.Error(w, "Invalid API key", http.StatusUnauthorized)
 		return
 	}
 	_, err = cfg.DB.UpgradeToRed(r.Context(), userID)
