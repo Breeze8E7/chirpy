@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -275,8 +276,24 @@ func (cfg *apiConfig) getAllChirps(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
+	authorID := uuid.Nil
+	authorIDString := r.URL.Query().Get("author_id")
+	if authorIDString != "" {
+		authorID, err = uuid.Parse(authorIDString)
+		if err != nil {
+			http.Error(w, "Invalid author ID", http.StatusBadRequest)
+			return
+		}
+	}
+	sortOrder := r.URL.Query().Get("sort")
+	if sortOrder != "desc" {
+		sortOrder = "asc"
+	}
 	responseChirps := make([]Chirp, len(chirps))
 	for i, chirp := range chirps {
+		if authorID != uuid.Nil && chirp.UserID != authorID {
+			continue
+		}
 		responseChirps[i] = Chirp{
 			ID:        chirp.ID,
 			CreatedAt: chirp.CreatedAt,
@@ -285,6 +302,12 @@ func (cfg *apiConfig) getAllChirps(w http.ResponseWriter, r *http.Request) {
 			UserID:    chirp.UserID,
 		}
 	}
+	sort.Slice(responseChirps, func(i, j int) bool {
+		if sortOrder == "asc" {
+			return responseChirps[i].CreatedAt.Before(responseChirps[j].CreatedAt)
+		}
+		return responseChirps[i].CreatedAt.After(responseChirps[j].CreatedAt)
+	})
 	jsonResponse, err := json.Marshal(responseChirps)
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
